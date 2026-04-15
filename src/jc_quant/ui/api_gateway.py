@@ -2,11 +2,13 @@ import asyncio
 import json
 import os
 import mlx.core as mx
+import logging
 from fastapi import FastAPI, WebSocket, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 
-# Import compiled IP or Vault fallback
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [API GATEWAY] %(message)s")
+
 try:
     from src.jc_quant.core.atml_modulator import IsingModulator
 except ImportError:
@@ -17,7 +19,7 @@ except ImportError:
 from src.jc_quant.bridge.cuda_q_bridge import NVQLinkBridge
 from src.jc_quant.telemetry.audit_ledger import LedgerAuditSystem
 from src.jc_quant.core.tensor_utils import DataIngestor
-from src.jc_quant.security.gate import SecurityGate, CONFIG
+from src.jc_quant.security.gate import SecurityGate
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="src/jc_quant/ui/static"), name="static")
@@ -46,33 +48,42 @@ async def broadcast(data: dict):
 
 @app.post("/api/sandbox/inject")
 async def inject_dataset(file: UploadFile = File(...)):
-    # 1. Signal "Processing" to UI immediately
     await broadcast({"event": "processing_start", "filename": file.filename})
 
-    # 2. Save file temporarily
+    # ROOT FIX: Explicitly generate the deeply nested parquet path
+    os.makedirs("data_lake/parquet", exist_ok=True)
     temp_path = f"data_lake/{file.filename}"
-    with open(temp_path, "wb") as f: f.write(await file.read())
-
-    # 3. Offload heavy math to worker thread (prevents dashboard stall)
+    
     try:
-        def compute_pipeline():
-            raw_state = DataIngestor.process(temp_path)
-            trust_score = SecurityGate.calculate_trust_score(raw_state)
-            U, S, Vt, fds = modulator.execute_decoding_loop(raw_state)
-            metrics = bridge.evaluate_efficiency(S, fds)
+        with open(temp_path, "wb") as f: 
+            f.write(await file.read())
             
-            ledger.commit_audit(trust_score, fds.item(), metrics['tensor_density'], metrics['speed_multiplier'], metrics['accuracy_multiplier'])
-            return {"fds": fds.item(), "speed_x": metrics['speed_multiplier'], "trust_score": trust_score}
+        def compute_pipeline():
+            try:
+                raw_state = DataIngestor.process(temp_path)
+                trust_score = SecurityGate.calculate_trust_score(raw_state)
+                U, S, Vt, fds = modulator.execute_decoding_loop(raw_state)
+                metrics = bridge.evaluate_efficiency(S, fds)
+                
+                # If this fails, the exception will now be caught and broadcasted to the UI
+                ledger.commit_audit(trust_score, fds.item(), metrics['tensor_density'], metrics['speed_multiplier'], metrics['accuracy_multiplier'])
+                
+                return {"status": "success", "fds": fds.item(), "speed_x": metrics['speed_multiplier'], "trust_score": trust_score}
+            except Exception as e:
+                logging.error(f"Worker Thread Crash: {str(e)}")
+                return {"status": "error", "message": str(e)}
 
         results = await asyncio.to_thread(compute_pipeline)
         
-        # 4. Success Broadcast
-        await broadcast({
-            "event": "injection_complete",
-            "filename": file.filename,
-            **results
-        })
+        if results.get("status") == "error":
+             await broadcast({"event": "error", "message": results["message"]})
+        else:
+             await broadcast({
+                 "event": "injection_complete",
+                 "filename": file.filename,
+                 **results
+             })
     finally:
         if os.path.exists(temp_path): os.remove(temp_path)
 
-    return {"status": "success"}
+    return {"status": "request_processed"}

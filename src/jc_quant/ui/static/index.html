@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:;">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JuniorQuant | Omni Brain Edge</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -15,6 +16,7 @@
         .metric-line { font-family: "JetBrains Mono", monospace; font-size: 0.85rem; color: #089981; margin-bottom: 5px; }
         button, input[type="file"] { background-color: #2962ff; color: white; border: none; padding: 10px; border-radius: 4px; cursor: pointer; width: 100%; box-sizing: border-box; margin-top: 10px; font-weight: bold;}
         .log-box { flex-grow: 1; overflow-y: auto; background-color: #0b0e14; padding: 10px; font-family: monospace; font-size: 0.8rem; color: #787b86; margin-top: 10px; }
+        .val-orange { color: #f23645; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -32,7 +34,7 @@
         <div class="panel">
             <h2>Sandbox: Dataset Emulation</h2>
             <form id="upload-form">
-                <input type="file" id="file-input" accept=".csv,.parquet" required />
+                <input type="file" id="file-input" accept=".csv,.parquet,.raw" required />
                 <button type="submit">Inject Ternary Payload</button>
             </form>
             <div class="log-box" id="log-console">Waiting for WebSocket Sync...</div>
@@ -40,9 +42,10 @@
     </div>
 
     <script>
-        // --- WEBSOCKET & DATA BINDING ---
-        let currentFDS = 0.015; let isProcessing = false;
+        let currentFDS = 0.015;
         let currentDensity = 0.5;
+        let isProcessing = false;
+        
         const ws = new WebSocket(`ws://${window.location.host}/ws/telemetry`);
         const logConsole = document.getElementById('log-console');
 
@@ -54,14 +57,24 @@
         ws.onopen = () => log("[SYNC] Omni Globe bound to MLX Engine.");
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
-            if(data.event === "processing_start") { isProcessing = true; log(`[BUSY] Crunching ${data.filename}...`); } if(data.event === "injection_complete") { isProcessing = false;
+            
+            if(data.event === "processing_start") { 
+                isProcessing = true; 
+                log(`[BUSY] Crunching ${data.filename}...`); 
+            } 
+            else if(data.event === "error") { 
+                isProcessing = false; 
+                log(`<span class="val-orange">[FATAL] Kernel Error: ${data.message}</span>`); 
+            }
+            else if(data.event === "injection_complete") {
+                isProcessing = false;
                 currentFDS = data.fds;
                 currentDensity = (1.0 / data.speed_x);
                 
                 document.getElementById('val-fds').innerText = `FDS (Bias): ${currentFDS.toFixed(4)}`;
                 document.getElementById('val-density').innerText = `Vector Density: ${(currentDensity * 100).toFixed(1)}%`;
                 document.getElementById('val-power').innerText = `Power Est: ${(45.0 * currentDensity).toFixed(1)} mW`;
-                log(`[PASS] Payload Modulated. Adjusting Omni Globe physics.`);
+                log(`[PASS] Payload Modulated. Adjusting physics.`);
             }
         };
 
@@ -73,7 +86,6 @@
             await fetch('/api/sandbox/inject', { method: 'POST', body: formData });
         });
 
-        // --- THREE.JS OMNI GLOBE ENGINE ---
         const container = document.getElementById('canvas-container');
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 1000);
@@ -83,51 +95,43 @@
         renderer.setSize(container.clientWidth, container.clientHeight);
         container.appendChild(renderer.domElement);
 
-        // Nucleus (Bias Score / FDS)
         const nucleusGeo = new THREE.IcosahedronGeometry(1, 2);
         const nucleusMat = new THREE.MeshBasicMaterial({ color: 0x089981, wireframe: true });
         const nucleus = new THREE.Mesh(nucleusGeo, nucleusMat);
         scene.add(nucleus);
 
-        // Vector Rockets (Ternary Density)
         const particles = new THREE.Group();
         const rocketGeo = new THREE.ConeGeometry(0.05, 0.2, 4);
         const rocketMat = new THREE.MeshBasicMaterial({ color: 0x2962ff });
         
         for(let i=0; i<150; i++) {
             const mesh = new THREE.Mesh(rocketGeo, rocketMat);
-            // Random spherical distribution
             const phi = Math.acos( -1 + ( 2 * i ) / 150 );
             const theta = Math.sqrt( 150 * Math.PI ) * phi;
             const r = 2.5 + Math.random();
             mesh.position.setFromSphericalCoords(r, phi, theta);
             mesh.lookAt(0,0,0);
-            
-            // Store orbital base data
             mesh.userData = { radius: r, speed: Math.random() * 0.02 + 0.01 };
             particles.add(mesh);
         }
         scene.add(particles);
 
-        // Animation Loop
         function animate() {
             requestAnimationFrame(animate);
             
-            // Nucleus responds to FDS (Higher FDS = Red and faster pulse)
             nucleus.rotation.y += 0.005;
             nucleus.rotation.x += 0.002;
-            const targetColor = currentFDS > 0.05 ? 0xf23645 : 0x089981; // Red if unstable, Green if stable
+            const targetColor = currentFDS > 0.05 ? 0xf23645 : 0x089981; 
             nucleusMat.color.lerp(new THREE.Color(targetColor), 0.05);
             
-            const pulseBase = isProcessing ? 0.05 : 0.005; const pulse = 1 + Math.sin(Date.now() * pulseBase * (currentFDS * 100)) * (isProcessing ? 0.3 : 0.1);
+            const pulseBase = isProcessing ? 0.05 : 0.005; 
+            const pulse = 1 + Math.sin(Date.now() * pulseBase * (currentFDS * 100)) * (isProcessing ? 0.3 : 0.1);
             nucleus.scale.set(pulse, pulse, pulse);
 
-            // Rockets respond to Density
             const activeRockets = Math.floor(currentDensity * 150);
             particles.children.forEach((rocket, i) => {
-                rocket.visible = i < activeRockets; // Hide inactive rockets (sparsity)
+                rocket.visible = i < activeRockets;
                 if(rocket.visible) {
-                    // Orbit mechanics
                     rocket.position.applyAxisAngle(new THREE.Vector3(0,1,0), rocket.userData.speed);
                     rocket.lookAt(0,0,0);
                 }
