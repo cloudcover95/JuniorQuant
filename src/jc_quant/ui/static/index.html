@@ -41,7 +41,7 @@
 
     <script>
         // --- WEBSOCKET & DATA BINDING ---
-        let currentFDS = 0.015;
+        let currentFDS = 0.015; let isProcessing = false;
         let currentDensity = 0.5;
         const ws = new WebSocket(`ws://${window.location.host}/ws/telemetry`);
         const logConsole = document.getElementById('log-console');
@@ -54,7 +54,7 @@
         ws.onopen = () => log("[SYNC] Omni Globe bound to MLX Engine.");
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
-            if(data.event === "injection_complete") {
+            if(data.event === "processing_start") { isProcessing = true; log(`[BUSY] Crunching ${data.filename}...`); } if(data.event === "injection_complete") { isProcessing = false;
                 currentFDS = data.fds;
                 currentDensity = (1.0 / data.speed_x);
                 
@@ -119,7 +119,7 @@
             const targetColor = currentFDS > 0.05 ? 0xf23645 : 0x089981; // Red if unstable, Green if stable
             nucleusMat.color.lerp(new THREE.Color(targetColor), 0.05);
             
-            const pulse = 1 + Math.sin(Date.now() * 0.005 * (currentFDS * 100)) * 0.1;
+            const pulseBase = isProcessing ? 0.05 : 0.005; const pulse = 1 + Math.sin(Date.now() * pulseBase * (currentFDS * 100)) * (isProcessing ? 0.3 : 0.1);
             nucleus.scale.set(pulse, pulse, pulse);
 
             // Rockets respond to Density
