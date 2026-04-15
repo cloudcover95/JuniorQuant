@@ -3,62 +3,46 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JuniorQuant | Edge Control</title>
+    <title>JuniorQuant | Omni Brain Edge</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
-        body { background-color: #0b0e14; color: #d1d4dc; font-family: "SF Pro Display", -apple-system, sans-serif; margin: 0; padding: 20px; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        .panel { background-color: #151924; padding: 20px; border-radius: 6px; border: 1px solid #2a2e39; }
-        h2 { margin-top: 0; color: #787b86; font-size: 1rem; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #2a2e39; padding-bottom: 10px; }
-        .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px; }
-        .metric-box { background: #1e222d; padding: 15px; border-radius: 4px; }
-        .metric-label { font-size: 0.8rem; color: #787b86; }
-        .metric-val { font-size: 1.8rem; font-weight: 600; color: #2962ff; margin-top: 5px; }
-        .val-green { color: #089981; }
-        .val-orange { color: #f23645; }
-        button, input[type="file"] { background-color: #2962ff; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; box-sizing: border-box; margin-top: 10px;}
-        button:hover { background-color: #1e4bd8; }
-        .log-box { height: 150px; overflow-y: auto; background-color: #0b0e14; padding: 10px; border-radius: 4px; font-family: "JetBrains Mono", monospace; font-size: 0.85rem; color: #089981; }
+        body { background-color: #0b0e14; color: #d1d4dc; font-family: "SF Pro Display", sans-serif; margin: 0; padding: 20px; overflow-x: hidden; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; height: 90vh; }
+        .panel { background-color: #151924; padding: 20px; border-radius: 6px; border: 1px solid #2a2e39; display: flex; flex-direction: column; }
+        h2 { margin-top: 0; color: #787b86; font-size: 0.9rem; text-transform: uppercase; border-bottom: 1px solid #2a2e39; padding-bottom: 10px; }
+        #canvas-container { flex-grow: 1; width: 100%; border-radius: 4px; overflow: hidden; background: #000; position: relative; }
+        .metrics-overlay { position: absolute; top: 10px; left: 10px; z-index: 10; pointer-events: none; }
+        .metric-line { font-family: "JetBrains Mono", monospace; font-size: 0.85rem; color: #089981; margin-bottom: 5px; }
+        button, input[type="file"] { background-color: #2962ff; color: white; border: none; padding: 10px; border-radius: 4px; cursor: pointer; width: 100%; box-sizing: border-box; margin-top: 10px; font-weight: bold;}
+        .log-box { flex-grow: 1; overflow-y: auto; background-color: #0b0e14; padding: 10px; font-family: monospace; font-size: 0.8rem; color: #787b86; margin-top: 10px; }
     </style>
 </head>
 <body>
     <div class="grid">
-        <div class="panel">
-            <h2>Slate AX Telemetry (b1.58 Active)</h2>
-            <div class="metric-grid">
-                <div class="metric-box">
-                    <div class="metric-label">Power Draw Est.</div>
-                    <div class="metric-val val-green" id="val-power">-- mW</div>
-                </div>
-                <div class="metric-box">
-                    <div class="metric-label">Ternary Density</div>
-                    <div class="metric-val" id="val-density">-- %</div>
-                </div>
-                <div class="metric-box">
-                    <div class="metric-label">Feature Disagreement</div>
-                    <div class="metric-val val-orange" id="val-fds">--</div>
-                </div>
-                <div class="metric-box">
-                    <div class="metric-label">Nvidia Speed Yield</div>
-                    <div class="metric-val" id="val-speed">-- x</div>
+        <div class="panel" style="padding: 0; border: none;">
+            <div id="canvas-container">
+                <div class="metrics-overlay">
+                    <div class="metric-line" id="val-fds">FDS (Bias): 0.0000</div>
+                    <div class="metric-line" id="val-density">Vector Density: 0.0%</div>
+                    <div class="metric-line" id="val-power">Power Est: 0.0 mW</div>
                 </div>
             </div>
-            <div class="log-box" id="log-console">Waiting for WebSocket Sync...</div>
         </div>
 
         <div class="panel">
-            <h2>Zero-Trust Dataset Emulation</h2>
+            <h2>Sandbox: Dataset Emulation</h2>
             <form id="upload-form">
                 <input type="file" id="file-input" accept=".csv,.parquet" required />
-                <button type="submit">Inject Edge Tensor Payload</button>
+                <button type="submit">Inject Ternary Payload</button>
             </form>
-            <br>
-            <h2>Audit Ledger</h2>
-            <button onclick="fetchAudit()" style="background-color: #1e222d; border: 1px solid #2a2e39; color: #d1d4dc;">Pull Parquet Ledger</button>
-            <pre id="audit-report" style="font-family: monospace; color: #787b86; margin-top: 15px; white-space: pre-wrap; word-wrap: break-word;"></pre>
+            <div class="log-box" id="log-console">Waiting for WebSocket Sync...</div>
         </div>
     </div>
 
     <script>
+        // --- WEBSOCKET & DATA BINDING ---
+        let currentFDS = 0.015;
+        let currentDensity = 0.5;
         const ws = new WebSocket(`ws://${window.location.host}/ws/telemetry`);
         const logConsole = document.getElementById('log-console');
 
@@ -67,19 +51,17 @@
             logConsole.scrollTop = logConsole.scrollHeight;
         }
 
-        ws.onopen = () => log("[SYNC] WebSocket Bound to Local Mesh.");
+        ws.onopen = () => log("[SYNC] Omni Globe bound to MLX Engine.");
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
             if(data.event === "injection_complete") {
-                document.getElementById('val-fds').innerText = data.fds.toFixed(4);
-                document.getElementById('val-speed').innerText = data.speed_x.toFixed(1) + 'x';
+                currentFDS = data.fds;
+                currentDensity = (1.0 / data.speed_x);
                 
-                // Emulated UI updates for edge metrics based on speed factor
-                const density = (1.0 / data.speed_x) * 100;
-                document.getElementById('val-density').innerText = density.toFixed(1) + '%';
-                document.getElementById('val-power').innerText = (45.0 * (density / 100)).toFixed(1) + ' mW';
-                
-                log(`[PASS] ${data.filename} | Trust: ${data.trust_score.toFixed(2)}`);
+                document.getElementById('val-fds').innerText = `FDS (Bias): ${currentFDS.toFixed(4)}`;
+                document.getElementById('val-density').innerText = `Vector Density: ${(currentDensity * 100).toFixed(1)}%`;
+                document.getElementById('val-power').innerText = `Power Est: ${(45.0 * currentDensity).toFixed(1)} mW`;
+                log(`[PASS] Payload Modulated. Adjusting Omni Globe physics.`);
             }
         };
 
@@ -87,16 +69,79 @@
             e.preventDefault();
             const formData = new FormData();
             formData.append('file', document.getElementById('file-input').files[0]);
-            
-            log("[ROUTING] Payload traversing ATML -> BitNet Matrix...");
+            log("Transmitting payload...");
             await fetch('/api/sandbox/inject', { method: 'POST', body: formData });
         });
 
-        async function fetchAudit() {
-            const res = await fetch('/api/audit/report');
-            const data = await res.json();
-            document.getElementById('audit-report').innerText = JSON.stringify(data, null, 2);
+        // --- THREE.JS OMNI GLOBE ENGINE ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 1000);
+        camera.position.z = 5;
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        container.appendChild(renderer.domElement);
+
+        // Nucleus (Bias Score / FDS)
+        const nucleusGeo = new THREE.IcosahedronGeometry(1, 2);
+        const nucleusMat = new THREE.MeshBasicMaterial({ color: 0x089981, wireframe: true });
+        const nucleus = new THREE.Mesh(nucleusGeo, nucleusMat);
+        scene.add(nucleus);
+
+        // Vector Rockets (Ternary Density)
+        const particles = new THREE.Group();
+        const rocketGeo = new THREE.ConeGeometry(0.05, 0.2, 4);
+        const rocketMat = new THREE.MeshBasicMaterial({ color: 0x2962ff });
+        
+        for(let i=0; i<150; i++) {
+            const mesh = new THREE.Mesh(rocketGeo, rocketMat);
+            // Random spherical distribution
+            const phi = Math.acos( -1 + ( 2 * i ) / 150 );
+            const theta = Math.sqrt( 150 * Math.PI ) * phi;
+            const r = 2.5 + Math.random();
+            mesh.position.setFromSphericalCoords(r, phi, theta);
+            mesh.lookAt(0,0,0);
+            
+            // Store orbital base data
+            mesh.userData = { radius: r, speed: Math.random() * 0.02 + 0.01 };
+            particles.add(mesh);
         }
+        scene.add(particles);
+
+        // Animation Loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Nucleus responds to FDS (Higher FDS = Red and faster pulse)
+            nucleus.rotation.y += 0.005;
+            nucleus.rotation.x += 0.002;
+            const targetColor = currentFDS > 0.05 ? 0xf23645 : 0x089981; // Red if unstable, Green if stable
+            nucleusMat.color.lerp(new THREE.Color(targetColor), 0.05);
+            
+            const pulse = 1 + Math.sin(Date.now() * 0.005 * (currentFDS * 100)) * 0.1;
+            nucleus.scale.set(pulse, pulse, pulse);
+
+            // Rockets respond to Density
+            const activeRockets = Math.floor(currentDensity * 150);
+            particles.children.forEach((rocket, i) => {
+                rocket.visible = i < activeRockets; // Hide inactive rockets (sparsity)
+                if(rocket.visible) {
+                    // Orbit mechanics
+                    rocket.position.applyAxisAngle(new THREE.Vector3(0,1,0), rocket.userData.speed);
+                    rocket.lookAt(0,0,0);
+                }
+            });
+
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        });
     </script>
 </body>
 </html>
