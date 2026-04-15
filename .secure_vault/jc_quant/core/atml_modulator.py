@@ -15,7 +15,7 @@ class IsingModulator:
 
     def execute_decoding_loop(self, Y: mx.array) -> tuple[mx.array, mx.array, mx.array, mx.array]:
         """Riemannian optimization loop. SVD soft-thresholding."""
-        # FIX: Explicitly route SVD to M4 CPU cores to bypass MLX GPU limitations
+        # ROOT FIX: Explicitly route to Apple Silicon CPU cores
         U, S, Vt = mx.linalg.svd(Y, stream=mx.cpu)
         
         for _ in range(self.max_iter):
