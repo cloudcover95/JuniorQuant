@@ -58,6 +58,13 @@
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
             
+            if(data.event === "stream_update") { 
+                currentFDS = data.fds; 
+                currentDensity = (1.0 / data.speed_x); 
+                document.getElementById("val-fds").innerText = `FDS (Bias): ${currentFDS.toFixed(4)}`; 
+                document.getElementById("val-density").innerText = `Vector Density: ${(currentDensity * 100).toFixed(1)}%`; 
+                document.getElementById("val-power").innerText = `Power Est: ${(45.0 * currentDensity).toFixed(1)} mW`; 
+            }
             if(data.event === "processing_start") { 
                 isProcessing = true; 
                 log(`[BUSY] Crunching ${data.filename}...`); 
