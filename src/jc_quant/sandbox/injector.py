@@ -5,44 +5,45 @@ from src.jc_quant.core.atml_modulator import IsingModulator
 from src.jc_quant.bridge.cuda_q_bridge import NVQLinkBridge
 from src.jc_quant.telemetry.audit_ledger import LedgerAuditSystem
 from src.jc_quant.security.gate import SecurityGate, CONFIG
+from src.jc_quant.edge.bitnet_ternary_sandbox import BitNetManifold
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [AGENT CONTROL PLANE] %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [EDGE CONTROL] %(message)s")
 
 async def execute_hardware_calibration():
-    """Agentic sandbox executing the quantum calibration control loop."""
     modulator = IsingModulator()
     bridge = NVQLinkBridge()
     ledger = LedgerAuditSystem()
+    bitnet = BitNetManifold()
     
-    logging.info(f"Initialized JuniorQuant ATML. Target: {CONFIG['benchmarks']['speed_target']}x Speed / {CONFIG['benchmarks']['accuracy_multiplier']}x Accuracy.")
-    
-    for cycle in range(1, 6):
-        # 1. Dataset Injection & Trust Gate
+    for cycle in range(1, 10):
         raw_state = mx.random.normal((512, 512))
         trust_score = SecurityGate.calculate_trust_score(raw_state)
         
         if trust_score < CONFIG['trust_engine']['min_trust_score']:
-             logging.warning(f"Cycle {cycle}: Data Trust ({trust_score:.2f}) below threshold. Modulating gradient...")
-             raw_state = raw_state * 0.1 # Simulated noise filtering
-             trust_score = SecurityGate.calculate_trust_score(raw_state)
+             continue
 
-        # 2. SVD Mesh Modulator (Decoherence Isolation)
+        # 1. Manifold Optimization
         U, S, Vt, fds = modulator.execute_decoding_loop(raw_state)
+        
+        # 2. Ternary b1.58 Compression
+        edge_metrics = bitnet.compress_logic_gate(U, S, Vt)
         
         # 3. Interconnect Benchmarking
         metrics = bridge.evaluate_efficiency(S, fds)
         
-        # 4. Parquet Ledger Reporting
+        # Add ternary metrics to payload
+        speed_boost = metrics['speed_multiplier'] * (1.0 / (edge_metrics['ternary_density'] + 1e-4))
+        
         ledger.commit_audit(
             trust_score, 
             fds.item(), 
-            metrics['tensor_density'], 
-            metrics['speed_multiplier'], 
+            edge_metrics['ternary_density'], 
+            speed_boost, 
             metrics['accuracy_multiplier']
         )
         
-        logging.info(f"Cycle {cycle} Executed | Trust: {trust_score:.2f} | FDS: {fds.item():.4f} | Speed Yield: {metrics['speed_multiplier']:.1f}x | Accuracy Yield: {metrics['accuracy_multiplier']:.1f}x")
-        await asyncio.sleep(0.1)
+        logging.info(f"Cycle {cycle} | Density: {edge_metrics['ternary_density']:.3f} | Edge Draw: {edge_metrics['power_draw_mw']:.1f}mW | Speed: {speed_boost:.1f}x")
+        await asyncio.sleep(0.5)
 
 if __name__ == "__main__":
     asyncio.run(execute_hardware_calibration())

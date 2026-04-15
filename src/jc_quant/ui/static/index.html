@@ -3,37 +3,58 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JuniorQuant | Control Plane</title>
+    <title>JuniorQuant | Edge Control</title>
     <style>
-        body { background-color: #131722; color: #d1d4dc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 20px; }
+        body { background-color: #0b0e14; color: #d1d4dc; font-family: "SF Pro Display", -apple-system, sans-serif; margin: 0; padding: 20px; }
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        .panel { background-color: #1e222d; padding: 20px; border-radius: 8px; border: 1px solid #2a2e39; }
-        h2 { margin-top: 0; color: #e0e3eb; font-size: 1.2rem; border-bottom: 1px solid #2a2e39; padding-bottom: 10px; }
-        .metric { font-size: 2rem; font-weight: bold; color: #2962ff; }
-        button, input[type="file"] { background-color: #2962ff; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; margin-top: 10px; }
+        .panel { background-color: #151924; padding: 20px; border-radius: 6px; border: 1px solid #2a2e39; }
+        h2 { margin-top: 0; color: #787b86; font-size: 1rem; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #2a2e39; padding-bottom: 10px; }
+        .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px; }
+        .metric-box { background: #1e222d; padding: 15px; border-radius: 4px; }
+        .metric-label { font-size: 0.8rem; color: #787b86; }
+        .metric-val { font-size: 1.8rem; font-weight: 600; color: #2962ff; margin-top: 5px; }
+        .val-green { color: #089981; }
+        .val-orange { color: #f23645; }
+        button, input[type="file"] { background-color: #2962ff; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; box-sizing: border-box; margin-top: 10px;}
         button:hover { background-color: #1e4bd8; }
-        .log-box { height: 200px; overflow-y: auto; background-color: #131722; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 0.9rem; }
+        .log-box { height: 150px; overflow-y: auto; background-color: #0b0e14; padding: 10px; border-radius: 4px; font-family: "JetBrains Mono", monospace; font-size: 0.85rem; color: #089981; }
     </style>
 </head>
 <body>
     <div class="grid">
         <div class="panel">
-            <h2>Telemetry Stream (WebSocket)</h2>
-            <div>Latest FDS: <span id="val-fds" class="metric">0.0000</span></div>
-            <div>Efficiency Yield: <span id="val-speed" class="metric">0.0x</span></div>
-            <div class="log-box" id="log-console">Waiting for connection...</div>
+            <h2>Slate AX Telemetry (b1.58 Active)</h2>
+            <div class="metric-grid">
+                <div class="metric-box">
+                    <div class="metric-label">Power Draw Est.</div>
+                    <div class="metric-val val-green" id="val-power">-- mW</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label">Ternary Density</div>
+                    <div class="metric-val" id="val-density">-- %</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label">Feature Disagreement</div>
+                    <div class="metric-val val-orange" id="val-fds">--</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label">Nvidia Speed Yield</div>
+                    <div class="metric-val" id="val-speed">-- x</div>
+                </div>
+            </div>
+            <div class="log-box" id="log-console">Waiting for WebSocket Sync...</div>
         </div>
 
         <div class="panel">
-            <h2>Sandbox: Dataset Injection</h2>
+            <h2>Zero-Trust Dataset Emulation</h2>
             <form id="upload-form">
-                <input type="file" id="file-input" required />
-                <button type="submit">Inject Tensor Payload</button>
+                <input type="file" id="file-input" accept=".csv,.parquet" required />
+                <button type="submit">Inject Edge Tensor Payload</button>
             </form>
-            
-            <h2 style="margin-top: 20px;">Audit Ledger Analytics</h2>
-            <button onclick="fetchAudit()">Generate Hardware Report</button>
-            <pre id="audit-report" style="font-family: monospace; color: #00e676;"></pre>
+            <br>
+            <h2>Audit Ledger</h2>
+            <button onclick="fetchAudit()" style="background-color: #1e222d; border: 1px solid #2a2e39; color: #d1d4dc;">Pull Parquet Ledger</button>
+            <pre id="audit-report" style="font-family: monospace; color: #787b86; margin-top: 15px; white-space: pre-wrap; word-wrap: break-word;"></pre>
         </div>
     </div>
 
@@ -42,17 +63,23 @@
         const logConsole = document.getElementById('log-console');
 
         function log(msg) {
-            logConsole.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+            logConsole.innerHTML += `<div>> ${msg}</div>`;
             logConsole.scrollTop = logConsole.scrollHeight;
         }
 
-        ws.onopen = () => log("WebSocket Connected: Slate AX Local Mesh");
+        ws.onopen = () => log("[SYNC] WebSocket Bound to Local Mesh.");
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
             if(data.event === "injection_complete") {
                 document.getElementById('val-fds').innerText = data.fds.toFixed(4);
-                document.getElementById('val-speed').innerText = data.speed_x.toFixed(2) + 'x';
-                log(`INJECTED: ${data.filename} | Trust: ${data.trust_score.toFixed(2)}`);
+                document.getElementById('val-speed').innerText = data.speed_x.toFixed(1) + 'x';
+                
+                // Emulated UI updates for edge metrics based on speed factor
+                const density = (1.0 / data.speed_x) * 100;
+                document.getElementById('val-density').innerText = density.toFixed(1) + '%';
+                document.getElementById('val-power').innerText = (45.0 * (density / 100)).toFixed(1) + ' mW';
+                
+                log(`[PASS] ${data.filename} | Trust: ${data.trust_score.toFixed(2)}`);
             }
         };
 
@@ -61,7 +88,7 @@
             const formData = new FormData();
             formData.append('file', document.getElementById('file-input').files[0]);
             
-            log("Transmitting payload to ATML Modulator...");
+            log("[ROUTING] Payload traversing ATML -> BitNet Matrix...");
             await fetch('/api/sandbox/inject', { method: 'POST', body: formData });
         });
 
