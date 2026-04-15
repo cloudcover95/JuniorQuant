@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import time
 import logging
 import mlx.core as mx
 from fastapi import FastAPI, WebSocket, UploadFile, File
@@ -74,6 +75,9 @@ async def inject_dataset(file: UploadFile = File(...)):
             global_speed_ewma = 0.0
             alpha = 0.1 
             chunk_count = 0
+            
+            # Time-Series Accumulators
+            ts_log, trust_log, fds_log, density_log, speed_log, acc_log = [], [], [], [], [], []
 
             for chunk_tensor in StreamIngestor.stream_file(temp_path):
                 chunk_count += 1
@@ -100,7 +104,16 @@ async def inject_dataset(file: UploadFile = File(...)):
                     "trust_score": trust_score
                 })
 
-                ledger.commit_audit(trust_score, current_fds, metrics['tensor_density'], current_speed, metrics['accuracy_multiplier'])
+                # Append to memory vectors
+                ts_log.append(time.time())
+                trust_log.append(trust_score)
+                fds_log.append(current_fds)
+                density_log.append(metrics['tensor_density'])
+                speed_log.append(current_speed)
+                acc_log.append(metrics['accuracy_multiplier'])
+
+            # ROOT FIX: Execute single batched SSD write upon stream completion
+            ledger.commit_stream_audit(ts_log, trust_log, fds_log, density_log, speed_log, acc_log)
 
             broadcast_sync(loop, {
                 "event": "injection_complete",
@@ -113,11 +126,8 @@ async def inject_dataset(file: UploadFile = File(...)):
             logging.error(f"Stream Thread Crash: {str(e)}")
             broadcast_sync(loop, {"event": "error", "message": str(e)})
         finally:
-            # ROOT FIX: Explicit cleanup inside the threaded execution context
             if os.path.exists(temp_path): 
                 os.remove(temp_path)
-                logging.info(f"Cleaned up temporary injection payload: {temp_path}")
 
-    # Fire and forget the background task
     asyncio.create_task(asyncio.to_thread(compute_stream))
     return {"status": "stream_initialized"}

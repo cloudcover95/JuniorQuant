@@ -5,21 +5,19 @@ import os
 from src.jc_quant.security.gate import SecurityGate, CONFIG
 
 class LedgerAuditSystem:
-    """High-density Parquet writing for TS telemetry and efficiency reporting."""
+    """High-density Parquet writing for continuous stream telemetry."""
     def __init__(self):
         self.output_dir = os.path.abspath(CONFIG['telemetry']['ledger_path'])
         SecurityGate.verify_path(self.output_dir)
         os.makedirs(self.output_dir, exist_ok=True)
 
-    def commit_audit(self, trust_score: float, fds: float, density: float, speed_x: float, accuracy_x: float) -> None:
-        """Vectorized column mapping for high-frequency writes."""
+    def commit_stream_audit(self, ts: list, trust: list, fds: list, density: list, speed: list, acc: list) -> None:
+        """Batch mapping for entire stream payloads to prevent SSD I/O thrashing."""
+        if not ts: return
+
         data = [
-            pa.array([time.time()]),
-            pa.array([trust_score]),
-            pa.array([fds]),
-            pa.array([density]),
-            pa.array([speed_x]),
-            pa.array([accuracy_x])
+            pa.array(ts), pa.array(trust), pa.array(fds),
+            pa.array(density), pa.array(speed), pa.array(acc)
         ]
         schema = pa.schema([
             ('timestamp', pa.float64()),
@@ -32,5 +30,5 @@ class LedgerAuditSystem:
         batch = pa.RecordBatch.from_arrays(data, schema=schema)
         table = pa.Table.from_batches([batch])
         
-        filepath = os.path.join(self.output_dir, f"audit_{int(time.time() * 1000)}.parquet")
+        filepath = os.path.join(self.output_dir, f"audit_stream_{int(time.time())}.parquet")
         pq.write_table(table, filepath)
