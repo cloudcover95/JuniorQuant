@@ -14,8 +14,10 @@ class IsingModulator:
         return mx.sqrt(mx.sum(mx.square(residual)))
 
     def execute_decoding_loop(self, Y: mx.array) -> tuple[mx.array, mx.array, mx.array, mx.array]:
-        """Riemannian optimization loop. SVD soft-thresholding: \Sigma^{(t+1)} = \max(\Sigma^{(t)} - \lambda, 0)."""
-        U, S, Vt = mx.linalg.svd(Y)
+        """Riemannian optimization loop. SVD soft-thresholding."""
+        # FIX: Explicitly route SVD to M4 CPU cores to bypass MLX GPU limitations
+        U, S, Vt = mx.linalg.svd(Y, stream=mx.cpu)
+        
         for _ in range(self.max_iter):
             fds = self.compute_calibration_error(Y, U, S, Vt)
             if fds <= self.fds_threshold:
