@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JuniorQuant | Control Plane</title>
+    <style>
+        body { background-color: #131722; color: #d1d4dc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 20px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .panel { background-color: #1e222d; padding: 20px; border-radius: 8px; border: 1px solid #2a2e39; }
+        h2 { margin-top: 0; color: #e0e3eb; font-size: 1.2rem; border-bottom: 1px solid #2a2e39; padding-bottom: 10px; }
+        .metric { font-size: 2rem; font-weight: bold; color: #2962ff; }
+        button, input[type="file"] { background-color: #2962ff; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; margin-top: 10px; }
+        button:hover { background-color: #1e4bd8; }
+        .log-box { height: 200px; overflow-y: auto; background-color: #131722; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+    <div class="grid">
+        <div class="panel">
+            <h2>Telemetry Stream (WebSocket)</h2>
+            <div>Latest FDS: <span id="val-fds" class="metric">0.0000</span></div>
+            <div>Efficiency Yield: <span id="val-speed" class="metric">0.0x</span></div>
+            <div class="log-box" id="log-console">Waiting for connection...</div>
+        </div>
+
+        <div class="panel">
+            <h2>Sandbox: Dataset Injection</h2>
+            <form id="upload-form">
+                <input type="file" id="file-input" required />
+                <button type="submit">Inject Tensor Payload</button>
+            </form>
+            
+            <h2 style="margin-top: 20px;">Audit Ledger Analytics</h2>
+            <button onclick="fetchAudit()">Generate Hardware Report</button>
+            <pre id="audit-report" style="font-family: monospace; color: #00e676;"></pre>
+        </div>
+    </div>
+
+    <script>
+        const ws = new WebSocket(`ws://${window.location.host}/ws/telemetry`);
+        const logConsole = document.getElementById('log-console');
+
+        function log(msg) {
+            logConsole.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+            logConsole.scrollTop = logConsole.scrollHeight;
+        }
+
+        ws.onopen = () => log("WebSocket Connected: Slate AX Local Mesh");
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if(data.event === "injection_complete") {
+                document.getElementById('val-fds').innerText = data.fds.toFixed(4);
+                document.getElementById('val-speed').innerText = data.speed_x.toFixed(2) + 'x';
+                log(`INJECTED: ${data.filename} | Trust: ${data.trust_score.toFixed(2)}`);
+            }
+        };
+
+        document.getElementById('upload-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData();
+            formData.append('file', document.getElementById('file-input').files[0]);
+            
+            log("Transmitting payload to ATML Modulator...");
+            await fetch('/api/sandbox/inject', { method: 'POST', body: formData });
+        });
+
+        async function fetchAudit() {
+            const res = await fetch('/api/audit/report');
+            const data = await res.json();
+            document.getElementById('audit-report').innerText = JSON.stringify(data, null, 2);
+        }
+    </script>
+</body>
+</html>
