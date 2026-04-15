@@ -24,7 +24,6 @@ from src.jc_quant.security.gate import SecurityGate
 
 app = FastAPI()
 
-# ROOT FIX 2: Network-Level CSP to override Brave Browser Shields
 class CSPMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         response = await call_next(request)
@@ -114,9 +113,11 @@ async def inject_dataset(file: UploadFile = File(...)):
             logging.error(f"Stream Thread Crash: {str(e)}")
             broadcast_sync(loop, {"event": "error", "message": str(e)})
         finally:
-            if os.path.exists(temp_path): os.remove(temp_path)
+            # ROOT FIX: Explicit cleanup inside the threaded execution context
+            if os.path.exists(temp_path): 
+                os.remove(temp_path)
+                logging.info(f"Cleaned up temporary injection payload: {temp_path}")
 
-    # ROOT FIX 1: Explicitly wrap the coroutine in a Background Task to prevent GC execution drop
+    # Fire and forget the background task
     asyncio.create_task(asyncio.to_thread(compute_stream))
-    
     return {"status": "stream_initialized"}
